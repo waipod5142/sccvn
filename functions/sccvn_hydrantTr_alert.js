@@ -1,0 +1,56 @@
+exports = async function(payload, response) {
+  const sccvnDB = context.services.get('mongodb-atlas').db('sccvn');
+  const Collection = sccvnDB.collection('hydrantTr');
+
+  // Calculate the date one hour ago
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+  const pipeline = [
+    { $match: { date: { $gte: oneHourAgo } } }, // Filter for dates within the last hour
+    { $sort: { 'date': -1 } },
+    {
+      $lookup: {
+        from: 'extinguisher',
+        let: { extinguisherId: '$id' },
+        pipeline: [
+          { $match:
+             { $expr:
+                { $eq: ['$id', '$$extinguisherId'] }
+             }
+          },
+          { $limit: 1 }
+        ],
+        as: 'extinguisherInfo'
+      }
+    },
+    { $unwind: '$extinguisherInfo' },
+    { $addFields: {
+        'type': '$extinguisherInfo.type',
+        'site': '$extinguisherInfo.site',
+        'email': '$extinguisherInfo.email',
+      }
+    },
+    { $project: { 'extinguisherInfo': 0 } },
+    {
+      $match: {
+        $or: [
+          { 'generalCheck': 'NotPass' },
+          { 'valveCheck': 'NotPass' },
+          { 'capCheck': 'NotPass' },
+          { 'hydrantHeadCheck': 'NotPass' },
+          { 'inspectionTagCheck': 'NotPass' },
+          { 'hydrantBodyCheck': 'NotPass' },
+          { 'waterPressureCheck': 'NotPass' },
+          { 'fireHoseCheck': 'NotPass' },
+          { 'fireNozzleCheck': 'NotPass' },
+          { 'hoseCabinetCheck': 'NotPass' },
+          { 'otherChecks': 'NotPass' },
+        ]
+      }
+    }
+  ];
+
+  const result = await Collection.aggregate(pipeline).toArray();
+
+  return result;
+};
