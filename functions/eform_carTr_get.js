@@ -1,66 +1,67 @@
 exports = async function(payload, response) {
   const eformDB = context.services.get("mongodb-atlas").db("eform");
-  const Collection = eformDB.collection("abcCar");
+  const collection = eformDB.collection("abcCar");
+  const currentDate = new Date();
+  const year = payload.query.y ? parseInt(payload.query.y, 10) : currentDate.getFullYear();
+  const month = payload.query.m ? parseInt(payload.query.m, 10) - 1 : currentDate.getMonth(); // เดือนใน JavaScript เริ่มที่ 0
+  const day = payload.query.d ? parseInt(payload.query.d, 10) : null;
+  const type = payload.query.type || null;
+  const id = payload.query.id || null;
 
-  // ดึงค่าพารามิเตอร์จาก payload
-  const id = payload.query && payload.query.id ? payload.query.id : null;
-  const month = payload.query && payload.query.m ? parseInt(payload.query.m, 10) : null;
-  const day = payload.query && payload.query.d ? parseInt(payload.query.d, 10) : null;
-  const type = payload.query && payload.query.type ? payload.query.type : null;
+  // สร้างเงื่อนไขการค้นหาตามพารามิเตอร์ที่ได้รับ
+  const query = {
+    ...(id && { id: { $regex: new RegExp(id, "i") } }),
+    ...(type && { type: { $regex: new RegExp(type, "i") } }),
+    ...(day !== null && {
+      $expr: {
+        $and: [
+          { $eq: [{ $year: "$date" }, year] },
+          { $eq: [{ $month: "$date" }, month] },
+          { $eq: [{ $dayOfMonth: "$date" }, day] }
+        ]
+      }
+    }),
+    ...(month !== null && day === null && {
+      $expr: {
+        $and: [
+          { $eq: [{ $year: "$date" }, year] },
+          { $eq: [{ $month: "$date" }, month] }
+        ]
+      }
+    })
+  };
 
-  // สร้างเงื่อนไขการค้นหา
-  let matchStage = {};
-  
-  if (id) {
-    matchStage.id = id;
+  // หากไม่มีพารามิเตอร์ใด ๆ กำหนดให้แสดงข้อมูลทั้งหมดในเดือนปีปัจจุบัน
+  if (Object.keys(payload.query || {}).length === 0) {
+    query.date = {
+      $gte: new Date(year, month, 1),
+      $lt: new Date(year, month + 1, 1)
+    };
   }
-  if (type) {
-    matchStage.type = type;
-  }
 
-  const pipeline = [
-    {
-      $match: matchStage
-    },
+  // ดึงข้อมูลตามเงื่อนไข
+  const result = await collection.aggregate([
     {
       $lookup: {
         from: "abcCarTr",
-        localField: "id",  // ฟิลด์ในคอลเลกชันหลัก (abcCar)
-        foreignField: "id", // ฟิลด์ในคอลเลกชันที่ join ที่ตรงกับ localField
+        localField: "id",
+        foreignField: "id",
         as: "trans",
-      }
+      },
     },
     {
       $unwind: {
         path: "$trans",
-        preserveNullAndEmptyArrays: true // เพิ่มเพื่อรักษาเอกสารที่ไม่มีการจับคู่
+        preserveNullAndEmptyArrays: true
       }
     },
     {
-      $addFields: {
-        "trans.date": {
-          $dateFromString: {
-            dateString: "$trans.date"
-          }
-        }
-      }
+      $match: query
     },
     {
-      $match: {
-        $expr: {
-          $and: [
-            month !== null ? { $eq: [{ $month: "$trans.date" }, month] } : { $expr: { $gt: -1, $lt: 13 } }, // กรองเดือน
-            day !== null ? { $eq: [{ $dayOfMonth: "$trans.date" }, day] } : { $expr: { $gt: -1, $lt: 32 } } // กรองวัน
-          ]
-        }
-      }
-    },
-    {
-      $sort: { "trans.date": -1 } // จัดลำดับตามวันที่ในเอกสารที่ joined
+      $sort: { "trans.date": -1 }
     }
-  ];
-
-  const result = await Collection.aggregate(pipeline).toArray();
+  ]).toArray();
 
   return result;
 };
