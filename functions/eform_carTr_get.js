@@ -39,6 +39,9 @@ exports = async function(payload, response) {
     };
   }
 
+  // ดีบัก: แสดงเงื่อนไขการค้นหา
+  console.log('Query:', JSON.stringify(query, null, 2));
+
   // ดึงข้อมูลตามเงื่อนไข
   const result = await collection.aggregate([
     {
