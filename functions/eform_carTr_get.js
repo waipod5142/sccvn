@@ -12,10 +12,13 @@ exports = async function(payload, response) {
       },
     },
     {
-      //$unwind: "$trans"
+      $unwind: {
+        path: "$trans",
+        preserveNullAndEmptyArrays: true // เพิ่มเพื่อรักษาเอกสารที่ไม่มีการจับคู่
+      }
     },
     {
-      $sort: { "trans.date": -1 }
+      $sort: { "trans.date": -1 } // จัดลำดับตามวันที่ในเอกสารที่ joined
     }
   ]).toArray();
 
